@@ -10,10 +10,7 @@ import java.util.List;
 @Getter
 @Setter
 @NoArgsConstructor
-public class ErrorResponse extends RuntimeException {
-    public ErrorResponse(String message) {
-        super(message);
-    }
+public class ErrorResponse {
 
     private LocalDateTime timestamp;
     private int status;
