@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/companies/{id}").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/companies/{id}").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/companies/{id}/registration").hasRole("ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .httpBasic(Customizer.withDefaults())
                 .sessionManagement(session-> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
