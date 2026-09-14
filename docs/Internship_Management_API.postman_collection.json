@@ -1,0 +1,501 @@
+{
+  "info": {
+    "name": "Internship Management API",
+    "_postman_id": "7c1f3b0a-2d4e-4f6b-9a1c-5e8d2a7b4c90",
+    "description": "Student Internship Management System — Spring Boot REST API (Technical University of Varna, SIT Year 3).\n\n## How to use\n1. Start the backend (`InternshipSystemApplication`) — it listens on `{{baseUrl}}` (default http://localhost:8080).\n2. Run the requests in **1. Auth** top-to-bottom: register a student, a company and an admin, then log each of them in. The login requests automatically store the JWT in `studentToken` / `companyToken` / `adminToken`.\n3. Every other request already carries the right Bearer token for its role.\n4. Requests that create things (company, offer, application) save the new id into `companyId` / `offerId` / `applicationId`, so the later requests work without editing anything.\n\nTokens expire after **30 minutes** — just re-run the login request.\n\nFull demo flow: Register → Login → Create company → Admin approves company → Company publishes offer → Student applies → Company changes status → Student checks `/applications/my`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "password", "value": "Password123" },
+    { "key": "studentEmail", "value": "student@tu-varna.bg" },
+    { "key": "companyEmail", "value": "company@example.com" },
+    { "key": "adminEmail", "value": "admin@tu-varna.bg" },
+    { "key": "studentToken", "value": "" },
+    { "key": "companyToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "companyId", "value": "" },
+    { "key": "offerId", "value": "" },
+    { "key": "applicationId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "description": "Public endpoints (no token needed). Run in order — the login requests save the JWT into collection variables.",
+      "item": [
+        {
+          "name": "Register STUDENT",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ivan\",\n  \"lastName\": \"Petrov\",\n  \"email\": \"{{studentEmail}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"STUDENT\",\n  \"facultyNumber\": \"20211234\",\n  \"specialty\": \"Software and Internet Technologies\",\n  \"course\": 3,\n  \"skills\": \"Java, Spring Boot, SQL, React\"\n}"
+            },
+            "description": "Creates a User with role STUDENT and a StudentProfile. Profile fields (facultyNumber, specialty, course, skills) are optional here and can be edited later via PUT /api/students/me.\n\nReturns 201 `User registered`. Returns 400 if the email is already taken."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Registered (201) or already exists (400)\", () => pm.expect([201, 400]).to.include(pm.response.code));"
+          ] } }]
+        },
+        {
+          "name": "Register COMPANY",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Maria\",\n  \"lastName\": \"Ivanova\",\n  \"email\": \"{{companyEmail}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"COMPANY\"\n}"
+            },
+            "description": "Creates the *user account* for a company. The company profile itself is created afterwards with POST /api/companies (while logged in as this user)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Registered (201) or already exists (400)\", () => pm.expect([201, 400]).to.include(pm.response.code));"
+          ] } }]
+        },
+        {
+          "name": "Register ADMIN",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Admin\",\n  \"lastName\": \"User\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"ADMIN\"\n}"
+            },
+            "description": "Creates an ADMIN account (used to approve companies and view all applications)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Registered (201) or already exists (400)\", () => pm.expect([201, 400]).to.include(pm.response.code));"
+          ] } }]
+        },
+        {
+          "name": "Login STUDENT",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{studentEmail}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "description": "Returns the JWT as a plain string. The test script stores it in `studentToken`. Token is valid for 30 minutes."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Login OK\", () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set(\"studentToken\", pm.response.text());"
+          ] } }]
+        },
+        {
+          "name": "Login COMPANY",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{companyEmail}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "description": "Stores the JWT in `companyToken`."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Login OK\", () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set(\"companyToken\", pm.response.text());"
+          ] } }]
+        },
+        {
+          "name": "Login ADMIN",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "description": "Stores the JWT in `adminToken`."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"Login OK\", () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set(\"adminToken\", pm.response.text());"
+          ] } }]
+        },
+        {
+          "name": "Login — wrong password (401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{studentEmail}}\",\n  \"password\": \"wrong-password\"\n}" },
+            "description": "Demonstrates the centralized error handling: `BadCredentialsException` → 401 with an `ErrorResponse` body."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"401 Unauthorized\", () => pm.response.to.have.status(401));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Enums (dropdown values)",
+      "description": "Public, read-only. Used by the React frontend to fill dropdowns. Each returns `[{ value, label }]`.",
+      "item": [
+        { "name": "Work types", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/enums/work-types", "host": ["{{baseUrl}}"], "path": ["api", "enums", "work-types"] }, "description": "ON_SITE, REMOTE, HYBRID" } },
+        { "name": "Roles", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/enums/roles", "host": ["{{baseUrl}}"], "path": ["api", "enums", "roles"] }, "description": "STUDENT, COMPANY, ADMIN" } },
+        { "name": "Application statuses", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/enums/application-statuses", "host": ["{{baseUrl}}"], "path": ["api", "enums", "application-statuses"] }, "description": "PENDING, UNDER_REVIEW, APPROVED, REJECTED" } },
+        { "name": "Company registration statuses", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/enums/company-registration", "host": ["{{baseUrl}}"], "path": ["api", "enums", "company-registration"] }, "description": "PENDING, ACCEPTED, REJECTED" } },
+        { "name": "Offer statuses", "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/enums/offer-statuses", "host": ["{{baseUrl}}"], "path": ["api", "enums", "offer-statuses"] }, "description": "ACTIVE, CLOSED" } }
+      ]
+    },
+    {
+      "name": "3. Student profile",
+      "description": "Role: STUDENT. The profile is created automatically at registration; these endpoints read/update it.",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/students/me", "host": ["{{baseUrl}}"], "path": ["api", "students", "me"] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/students/me", "host": ["{{baseUrl}}"], "path": ["api", "students", "me"] },
+            "body": { "mode": "raw", "raw": "{\n  \"facultyNumber\": \"20211234\",\n  \"specialty\": \"Software and Internet Technologies\",\n  \"course\": 3,\n  \"skills\": \"Java, Spring Boot, PostgreSQL, React, Git\"\n}" },
+            "description": "`facultyNumber` is required (max 50). Other fields optional."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Companies",
+      "description": "Create = COMPANY role (the logged-in user becomes the owner). Update / delete / approve = ADMIN. Read = any authenticated user.\n\nA company must be **ACCEPTED** by an admin before it can publish offers.",
+      "item": [
+        {
+          "name": "Create company (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/companies", "host": ["{{baseUrl}}"], "path": ["api", "companies"] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": 1,\n  \"name\": \"TechSoft Varna\",\n  \"description\": \"Software company building web and mobile products.\",\n  \"website\": \"www.techsoft-varna.com\",\n  \"city\": \"Varna\",\n  \"contactEmail\": \"hr@techsoft-varna.com\"\n}" },
+            "description": "The owner is taken from the JWT. `website` must be a bare domain (no `https://`). `name` and `contactEmail` must be unique.\n\nNote: the request DTO currently has a required `id` field — send any number; it is not the company id in the response.\n\nThe new company starts with `registrationStatus: PENDING`. The test script saves the returned id into `companyId`."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"201 Created\", () => pm.response.to.have.status(201));",
+            "if (pm.response.code === 201) { pm.collectionVariables.set(\"companyId\", pm.response.json().id); }"
+          ] } }]
+        },
+        {
+          "name": "Approve company (ADMIN)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "url": { "raw": "{{baseUrl}}/api/companies/{{companyId}}/registration?status=ACCEPTED", "host": ["{{baseUrl}}"], "path": ["api", "companies", "{{companyId}}", "registration"], "query": [{ "key": "status", "value": "ACCEPTED", "description": "PENDING | ACCEPTED | REJECTED" }] },
+            "description": "Workflow step 1 from the brief: *an administrator approves a company profile*. Offers cannot be created for a company that is not ACCEPTED."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Get all companies",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/companies", "host": ["{{baseUrl}}"], "path": ["api", "companies"] }
+          }
+        },
+        {
+          "name": "Get company by id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["api", "companies", "{{companyId}}"] }
+          }
+        },
+        {
+          "name": "Search company by name",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/companies/search/name?name=TechSoft Varna", "host": ["{{baseUrl}}"], "path": ["api", "companies", "search", "name"], "query": [{ "key": "name", "value": "TechSoft Varna" }] }
+          }
+        },
+        {
+          "name": "Search company by contact email",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/companies/search/email?contactEmail=hr@techsoft-varna.com", "host": ["{{baseUrl}}"], "path": ["api", "companies", "search", "email"], "query": [{ "key": "contactEmail", "value": "hr@techsoft-varna.com" }] }
+          }
+        },
+        {
+          "name": "Search company by owner user id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/companies/search/user?userId=2", "host": ["{{baseUrl}}"], "path": ["api", "companies", "search", "user"], "query": [{ "key": "userId", "value": "2" }] }
+          }
+        },
+        {
+          "name": "Update company (ADMIN)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["api", "companies", "{{companyId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": 1,\n  \"name\": \"TechSoft Varna\",\n  \"description\": \"Updated description — we now also do cloud consulting.\",\n  \"website\": \"www.techsoft-varna.com\",\n  \"city\": \"Varna\",\n  \"contactEmail\": \"hr@techsoft-varna.com\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Delete company (ADMIN)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/companies/{{companyId}}", "host": ["{{baseUrl}}"], "path": ["api", "companies", "{{companyId}}"] },
+            "description": "Returns 204. ⚠ Run this last — it removes the company used by the rest of the demo flow."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"204 No Content\", () => pm.response.to.have.status(204));"] } }]
+        },
+        {
+          "name": "Create company as STUDENT (403)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/companies", "host": ["{{baseUrl}}"], "path": ["api", "companies"] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": 1,\n  \"name\": \"Should Fail Ltd\",\n  \"website\": \"www.fail.com\",\n  \"city\": \"Sofia\",\n  \"contactEmail\": \"x@fail.com\"\n}" },
+            "description": "Role-based authorization demo: only COMPANY users may create a company."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"403 Forbidden\", () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "5. Internship offers",
+      "description": "Create / update / delete / my = COMPANY (only for the company you own, and only after it is ACCEPTED). Read = any authenticated user.",
+      "item": [
+        {
+          "name": "Create offer (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/internships", "host": ["{{baseUrl}}"], "path": ["api", "internships"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Java Backend Intern\",\n  \"description\": \"Work on our Spring Boot microservices together with a senior mentor.\",\n  \"requiredSkills\": \"Java, Spring Boot, SQL, Git\",\n  \"location\": \"Varna\",\n  \"type\": \"HYBRID\",\n  \"deadline\": \"2027-06-30\",\n  \"companyId\": {{companyId}}\n}" },
+            "description": "All fields required. `type` ∈ ON_SITE | REMOTE | HYBRID. `deadline` must be a future date (yyyy-MM-dd). `companyId` must be a company owned by the logged-in user and with `registrationStatus = ACCEPTED`.\n\nThe test script saves the returned id into `offerId`."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+            "if (pm.response.code === 200) { pm.collectionVariables.set(\"offerId\", pm.response.json().id); }"
+          ] } }]
+        },
+        {
+          "name": "Get all offers",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships", "host": ["{{baseUrl}}"], "path": ["api", "internships"] },
+            "description": "Students browse offers here."
+          }
+        },
+        {
+          "name": "Get offers by company",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships?companyId={{companyId}}", "host": ["{{baseUrl}}"], "path": ["api", "internships"], "query": [{ "key": "companyId", "value": "{{companyId}}" }] }
+          }
+        },
+        {
+          "name": "Get offer by id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships/{{offerId}}", "host": ["{{baseUrl}}"], "path": ["api", "internships", "{{offerId}}"] }
+          }
+        },
+        {
+          "name": "My offers (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships/my", "host": ["{{baseUrl}}"], "path": ["api", "internships", "my"] },
+            "description": "Offers belonging to the logged-in company user."
+          }
+        },
+        {
+          "name": "Update offer (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/internships/{{offerId}}", "host": ["{{baseUrl}}"], "path": ["api", "internships", "{{offerId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Java Backend Intern (Summer 2027)\",\n  \"description\": \"Updated: 3-month paid internship on Spring Boot microservices.\",\n  \"requiredSkills\": \"Java, Spring Boot, PostgreSQL, Docker\",\n  \"location\": \"Varna\",\n  \"type\": \"REMOTE\",\n  \"deadline\": \"2027-07-15\",\n  \"companyId\": {{companyId}}\n}" },
+            "description": "Only the owning company can edit. Another company gets 403 (`You can only manage your own offers`)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Applications for an offer (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships/{{offerId}}/applications", "host": ["{{baseUrl}}"], "path": ["api", "internships", "{{offerId}}", "applications"] },
+            "description": "Companies see applications only for their own offers."
+          }
+        },
+        {
+          "name": "Delete offer (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/internships/{{offerId}}", "host": ["{{baseUrl}}"], "path": ["api", "internships", "{{offerId}}"] },
+            "description": "⚠ Run after the application demo, otherwise the application requests will 404."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create offer as STUDENT (403)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/internships", "host": ["{{baseUrl}}"], "path": ["api", "internships"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Should fail\",\n  \"description\": \"x\",\n  \"requiredSkills\": \"x\",\n  \"location\": \"x\",\n  \"type\": \"REMOTE\",\n  \"deadline\": \"2027-01-01\",\n  \"companyId\": {{companyId}}\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"403 Forbidden\", () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Create offer — validation error (400)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/internships", "host": ["{{baseUrl}}"], "path": ["api", "internships"] },
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"\",\n  \"description\": \"Missing fields and a past deadline\",\n  \"type\": \"REMOTE\",\n  \"deadline\": \"2020-01-01\",\n  \"companyId\": {{companyId}}\n}" },
+            "description": "Shows Jakarta Bean Validation + GlobalExceptionHandler: 400 with a `details` list of field errors."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"400 Bad Request\", () => pm.response.to.have.status(400));",
+            "pm.test(\"has field error details\", () => pm.expect(pm.response.json().details).to.be.an(\"array\"));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "6. Applications",
+      "description": "Apply / my = STUDENT. Change status = COMPANY (own offers only). List all = ADMIN.",
+      "item": [
+        {
+          "name": "Apply to offer (STUDENT)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/applications", "host": ["{{baseUrl}}"], "path": ["api", "applications"] },
+            "body": { "mode": "raw", "raw": "{\n  \"internshipOfferId\": {{offerId}},\n  \"motivationLetter\": \"I am a 3rd-year SIT student with hands-on Spring Boot experience from university projects and I would love to join your backend team.\"\n}" },
+            "description": "The student is taken from the JWT (no studentId in the body). Status starts as PENDING. A student can apply **only once** per offer — running this twice returns 409/400.\n\nThe test script saves the id into `applicationId`."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+            "if (pm.response.code === 200) { pm.collectionVariables.set(\"applicationId\", pm.response.json().id); }"
+          ] } }]
+        },
+        {
+          "name": "Apply twice — duplicate (error)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/applications", "host": ["{{baseUrl}}"], "path": ["api", "applications"] },
+            "body": { "mode": "raw", "raw": "{\n  \"internshipOfferId\": {{offerId}},\n  \"motivationLetter\": \"Second attempt — should be rejected.\"\n}" },
+            "description": "Business rule from the brief: *a student can apply only once for the same offer*."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"rejected (400 or 409)\", () => pm.expect([400, 409]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "My applications (STUDENT)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/applications/my", "host": ["{{baseUrl}}"], "path": ["api", "applications", "my"] },
+            "description": "Student dashboard — track status of own applications."
+          }
+        },
+        {
+          "name": "Get application by id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/applications/{{applicationId}}", "host": ["{{baseUrl}}"], "path": ["api", "applications", "{{applicationId}}"] }
+          }
+        },
+        {
+          "name": "Set status UNDER_REVIEW (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/applications/{{applicationId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "applications", "{{applicationId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"comment\": \"Thanks for applying — we will schedule a call next week.\"\n}" },
+            "description": "`status` ∈ PENDING | UNDER_REVIEW | APPROVED | REJECTED. `comment` optional (max 1000)."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Set status APPROVED (COMPANY)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{companyToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/applications/{{applicationId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "applications", "{{applicationId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"APPROVED\",\n  \"comment\": \"Welcome aboard! HR will contact you with the contract.\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "All applications (ADMIN)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/applications", "host": ["{{baseUrl}}"], "path": ["api", "applications"] },
+            "description": "Platform-wide view for administrators."
+          }
+        },
+        {
+          "name": "Change status as STUDENT (403)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{studentToken}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/applications/{{applicationId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "applications", "{{applicationId}}", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"APPROVED\"\n}" },
+            "description": "Students cannot approve their own applications."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"403 Forbidden\", () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "7. Security checks",
+      "description": "Requests without a token — all protected endpoints must answer 401/403.",
+      "item": [
+        {
+          "name": "Offers without token (401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/internships", "host": ["{{baseUrl}}"], "path": ["api", "internships"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"401 or 403\", () => pm.expect([401, 403]).to.include(pm.response.code));"] } }]
+        },
+        {
+          "name": "OpenAPI JSON is public",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/v3/api-docs", "host": ["{{baseUrl}}"], "path": ["v3", "api-docs"] },
+            "description": "OpenAPI JSON. Human-readable UI: {{baseUrl}}/swagger-ui.html"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test(\"200 OK\", () => pm.response.to.have.status(200));"] } }]
+        }
+      ]
+    }
+  ]
+}
